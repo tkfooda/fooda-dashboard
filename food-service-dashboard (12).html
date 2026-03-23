@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FOODA @ Qualcomm · Declining Balance Dashboard</title>
+  <!-- Firebase compat SDK (synchronous, no module system needed) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --wt: #2563eb; --az: #16a34a; --q: #dc2626; --s: #9333ea;
+      --bg: #f0f4f8; --card: #fff; --border: #e2e8f0;
+      --text: #1e293b; --muted: #64748b; --header-bg: #1a1a1a;
+      --fooda: #F15D3B; --fooda-dk: #d44e2f;
+      --bf: #f59e0b;   /* breakfast amber  */
+      --ln: #0ea5e9;   /* lunch sky        */
+      --dn: #8b5cf6;   /* dinner purple    */
+      --rt: #14b8a6;   /* retail teal      */
+      --br: #b45309;   /* barista coffee   */
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── HEADER ── */
+    .app-header {
+      background: var(--header-bg); color: #fff;
+      padding: 12px 28px; display: flex; align-items: center; gap: 18px;
+    }
+    .app-header .logo-wrap { display: flex; align-items: center; flex-shrink: 0; }
+    .app-header .logo-wrap svg { height: 38px; width: auto; display: block; }
+    .app-header .header-divider {
+      width: 1px; height: 32px; background: rgba(255,255,255,.2); flex-shrink: 0;
+    }
+    .app-header .header-titles { flex: 1; }
+    .app-header .header-titles .ht-top {
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--fooda); margin-bottom: 1px;
+    }
+    .app-header .header-titles .ht-main {
+      font-size: 16px; font-weight: 700; color: #fff; line-height: 1.2;
+    }
+    .app-header .hdate { font-size: 11px; opacity: .5; white-space: nowrap; }
+
+    /* ── MONTH BAR ── */
+    .month-bar {
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 10px 28px; display: flex; align-items: center; gap: 10px;
+    }
+    .btn-nav {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 12px; cursor: pointer; font-size: 13px; color: var(--text);
+    }
+    .btn-nav:hover { background: var(--bg); }
+    .month-label { font-weight: 700; font-size: 15px; min-width: 160px; text-align: center; }
+    .btn-today {
+      margin-left: auto; background: var(--fooda); color: #fff;
+      border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600;
+    }
+    .btn-today:hover { background: var(--fooda-dk); }
+
+    /* ── SUMMARY CARDS ── */
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; padding: 24px 28px 8px;
+    }
+    .s-card {
+      background: #fff; border-radius: 12px; padding: 18px 20px;
+      border: 2px solid var(--border); cursor: pointer;
+      transition: box-shadow .15s, transform .15s;
+    }
+    .s-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.09); transform: translateY(-2px); }
+    .s-card.active { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+    .s-card .acct-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+    .s-card .bal-big { font-size: 26px; font-weight: 800; margin-bottom: 2px; }
+    .s-card .bal-sub { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+    .pbar { height: 5px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-bottom: 10px; }
+    .pbar-fill { height: 100%; border-radius: 99px; transition: width .4s; }
+    .s-card .mini-stats { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); gap: 4px; }
+    .mini-stats .val { font-weight: 700; display: block; }
+    .c-green { color: #16a34a; } .c-red { color: #dc2626; } .c-amber { color: #d97706; }
+    .c-bf { color: var(--bf); } .c-ln { color: var(--ln); } .c-dn { color: var(--dn); }
+    .c-rt { color: var(--rt); } .c-br { color: var(--br); }
+
+    /* ── ACCOUNT DETAIL ── */
+    .detail-wrap { padding: 20px 28px 40px; }
+    .detail-topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .detail-topbar h2 { font-size: 18px; font-weight: 700; }
+    .acct-pill {
+      font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 99px; color: #fff;
+    }
+
+    /* ── BALANCE EDITOR ── */
+    .bal-editor {
+      background: #fff; border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px 22px; display: flex; align-items: center; gap: 20px;
+      margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .bal-editor label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .bal-input-wrap { display: flex; align-items: center; gap: 6px; }
+    .bal-input-wrap span { font-size: 18px; font-weight: 700; color: var(--muted); }
+    .bal-editor input[type=number] {
+      border: 2px solid var(--border); border-radius: 8px; padding: 7px 10px;
+      font-size: 18px; font-weight: 700; width: 160px; color: var(--text);
+    }
+    .bal-editor input[type=number]:focus { outline: none; }
+    .kpis { margin-left: auto; display: flex; gap: 22px; flex-wrap: wrap; }
+    .kpi { text-align: center; }
+    .kpi .kv { font-size: 17px; font-weight: 800; }
+    .kpi .kl { font-size: 10px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* ── LAYOUT ── */
+    .detail-cols { display: grid; grid-template-columns: 1fr 370px; gap: 18px; align-items: start; }
+
+    /* ── TABLE CARD ── */
+    .tbl-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .tbl-head { padding: 13px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .tbl-head h3 { font-size: 13px; font-weight: 700; }
+    .tbl-head-right { display: flex; gap: 8px; align-items: center; }
+    .meal-legend { display: flex; gap: 10px; font-size: 11px; font-weight: 600; }
+    .leg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; }
+    .btn-add {
+      background: var(--fooda); color: #fff; border: none;
+      border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .btn-add:hover { background: var(--fooda-dk); }
+
+    /* Table overflow scroll */
+    .tbl-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 700px; }
+    thead th {
+      background: #f8fafc; padding: 9px 10px; text-align: left;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    thead th.num { text-align: right; }
+    thead th.bf-h { color: var(--bf); }
+    thead th.ln-h { color: var(--ln); }
+    thead th.dn-h { color: var(--dn); }
+    thead th.rt-h { color: var(--rt); }
+    thead th.br-h { color: var(--br); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #fafbfc; }
+    tbody td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    tbody td.num { text-align: right; }
+
+    td input[type=date], td input[type=number] {
+      border: 1px solid transparent; border-radius: 5px; padding: 4px 6px;
+      font-size: 13px; width: 100%; background: transparent;
+      font-family: inherit; color: var(--text);
+    }
+    td input[type=number] { text-align: right; min-width: 70px; }
+    td input:hover { border-color: #cbd5e1; }
+    td input:focus { outline: none; border-color: #94a3b8; background: #fff; }
+
+    .btn-del { background: none; border: none; cursor: pointer; color: #cbd5e1; font-size: 17px; padding: 2px 5px; border-radius: 4px; }
+    .btn-del:hover { color: #dc2626; background: #fee2e2; }
+
+    .tfoot-row td { font-size: 12px; font-weight: 700; background: #f8fafc; color: var(--text); padding: 10px 10px; border-top: 2px solid var(--border); white-space: nowrap; }
+
+    .empty-state { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+    .empty-state .ei { font-size: 32px; margin-bottom: 8px; }
+
+    /* ── CHART CARD ── */
+    .chart-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .chart-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .chart-sub { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+    .chart-wrap { position: relative; height: 240px; }
+
+    /* ── MEAL BREAKDOWN CHART ── */
+    .meal-chart-wrap { position: relative; height: 160px; margin-top: 16px; }
+    .chart-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0 12px; }
+    .chart-card .sub-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 10px; }
+
+    /* ── DETAIL TABS ── */
+    .dtab-bar {
+      display: flex; gap: 4px; margin-bottom: 18px;
+      border-bottom: 2px solid var(--border); padding-bottom: 0;
+    }
+    .dtab {
+      padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+      border: none; background: none; color: var(--muted); border-radius: 8px 8px 0 0;
+      margin-bottom: -2px; border-bottom: 2px solid transparent; transition: color .15s;
+    }
+    .dtab:hover { color: var(--text); background: #f8fafc; }
+    .dtab.active { color: var(--text); border-bottom-color: currentColor; background: #fff; }
+
+    /* ── COGS TAB ── */
+    .cogs-grid { display: grid; grid-template-columns: 1fr 370px; gap: 18px; align-items: start; }
+    .cogs-kpi-bar {
+      background: #fff; border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px 22px; display: flex; gap: 0; margin-bottom: 18px;
+      overflow: hidden;
+    }
+    .cogs-kpi-bar .ck {
+      flex: 1; text-align: center; padding: 6px 12px;
+      border-right: 1px solid var(--border);
+    }
+    .cogs-kpi-bar .ck:last-child { border-right: none; }
+    .ck .cv { font-size: 22px; font-weight: 800; }
+    .ck .cl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+    .cogs-pct-bar { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-top: 8px; }
+    .cogs-pct-fill { height: 100%; border-radius: 99px; }
+
+    .cogs-tbl-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .cogs-tbl-head { padding: 13px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .cogs-tbl-head h3 { font-size: 13px; font-weight: 700; }
+
+    .cogs-chart-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .cogs-chart-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .cogs-chart-wrap { position: relative; height: 240px; }
+    .cogs-chart-wrap2 { position: relative; height: 160px; margin-top: 16px; }
+
+    .pct-green { color: #16a34a; } .pct-amber { color: #d97706; } .pct-red { color: #dc2626; }
+
+    /* ── VIEW TOGGLE ── */
+    .view-toggle-bar {
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 7px 28px; display: flex; gap: 8px; align-items: center;
+    }
+    .btn-view {
+      padding: 5px 16px; border-radius: 20px; border: 1px solid var(--border);
+      font-size: 12px; font-weight: 600; cursor: pointer; background: none; color: var(--muted);
+      transition: all .15s;
+    }
+    .btn-view.active { background: var(--fooda); color: #fff; border-color: var(--fooda); }
+    .btn-view:hover:not(.active) { background: var(--bg); color: var(--text); }
+
+    /* ── DAILY SALES VIEW ── */
+    .daily-wrap { padding: 20px 28px 48px; display: none; }
+    .daily-chart-card {
+      background: #fff; border: 1px solid var(--border); border-radius: 12px;
+      padding: 20px; margin-bottom: 18px;
+    }
+    .daily-chart-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+    .daily-chart-wrap { position: relative; height: 280px; }
+    .daily-tbl-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .daily-tbl-scroll { overflow-x: auto; }
+    .daily-tbl { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 680px; }
+    .daily-tbl thead th {
+      background: #f8fafc; padding: 9px 14px; text-align: right;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    .daily-tbl thead th.lft { text-align: left; }
+    .daily-tbl thead th.az-h { color: #16a34a; } .daily-tbl thead th.q-h  { color: #dc2626; }
+    .daily-tbl thead th.s-h  { color: #9333ea; } .daily-tbl thead th.wt-h { color: #2563eb; }
+    .daily-tbl thead th.tot-h { color: var(--fooda); }
+    .daily-tbl tbody tr:hover td { background: #fafbfc; }
+    .daily-tbl tbody td { padding: 8px 14px; border-bottom: 1px solid #f1f5f9; text-align: right; vertical-align: top; }
+    .daily-tbl tbody td.date-cell { text-align: left; font-weight: 700; white-space: nowrap; color: var(--text); }
+    .daily-tbl tbody td.day-cell  { text-align: center; font-size: 10px; color: var(--muted); font-weight: 500; }
+    .d-val { font-weight: 700; display: block; }
+    .d-sub { font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 1px; line-height: 1.4; }
+    .d-zero { color: #cbd5e1; font-weight: 400; }
+    .daily-tbl tr.week-sep td { border-top: 2px solid #e2e8f0; }
+    .daily-tbl tr.week-hdr td {
+      background: #f8fafc; font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--muted); padding: 5px 14px; border-bottom: 1px solid var(--border);
+    }
+    .daily-tbl tfoot td {
+      font-size: 12px; font-weight: 800; background: var(--fooda); color: #fff;
+      padding: 11px 14px; border-top: 2px solid var(--border); text-align: right;
+    }
+    .daily-tbl tfoot td.lft { text-align: left; }
+
+    /* ── SAVE INDICATOR ── */
+    .save-bar {
+      position: fixed; bottom: 18px; right: 22px; z-index: 999;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .save-indicator {
+      background: #1a1a1a; color: #fff; font-size: 11px; font-weight: 600;
+      padding: 6px 13px; border-radius: 20px; opacity: 0;
+      transition: opacity .3s; pointer-events: none; letter-spacing: .03em;
+    }
+    .save-indicator.show { opacity: 1; }
+    .loading-overlay {
+      position: fixed; inset: 0; background: #fff; z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px; font-size: 15px; color: var(--muted);
+      font-weight: 600;
+    }
+    .loading-overlay .spin {
+      width: 36px; height: 36px; border: 3px solid #e2e8f0;
+      border-top-color: var(--fooda); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .fb-status {
+      font-size: 11px; font-weight: 600; padding: 6px 13px;
+      border-radius: 20px; pointer-events: none;
+    }
+    .fb-status.connected    { background: #dcfce7; color: #16a34a; }
+    .fb-status.disconnected { background: #fee2e2; color: #dc2626; }
+    .fb-status.syncing      { background: #fef9c3; color: #b45309; }
+    .btn-download {
+      background: #1a1a1a; color: #fff; border: none;
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+      padding: 6px 13px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    }
+    .btn-download:hover { background: var(--fooda); }
+    .btn-reset {
+      background: #fff; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+      padding: 6px 13px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    .btn-reset:hover { border-color: #dc2626; color: #dc2626; background: #fff5f5; }
+
+    /* ── COGS SUB-TABS ── */
+    .cogs-subtab-bar {
+      display: flex; gap: 4px; margin-bottom: 16px;
+      border-bottom: 2px solid var(--border);
+    }
+    .cogs-stab {
+      padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
+      border: none; background: none; color: var(--muted); border-radius: 7px 7px 0 0;
+      margin-bottom: -2px; border-bottom: 2px solid transparent;
+    }
+    .cogs-stab:hover { color: var(--text); background: #f8fafc; }
+    .cogs-stab.active { color: var(--text); border-bottom-color: currentColor; background: #fff; }
+
+    /* ── ANCILLARY TABLE ── */
+    .anc-tbl-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .anc-tbl-head { padding: 13px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .anc-tbl-head h3 { font-size: 13px; font-weight: 700; }
+    .anc-note-input {
+      border: 1px solid transparent; border-radius: 5px; padding: 4px 6px;
+      font-size: 12px; width: 100%; background: transparent;
+      font-family: inherit; color: var(--muted); resize: none;
+    }
+    .anc-note-input:hover { border-color: #cbd5e1; }
+    .anc-note-input:focus { outline: none; border-color: #94a3b8; background: #fff; color: var(--text); }
+    .vendor-note-input {
+      border: 1px solid transparent; border-radius: 5px; padding: 3px 5px;
+      font-size: 11px; width: 100%; min-width: 120px; background: transparent;
+      font-family: inherit; color: var(--muted); resize: none;
+    }
+    .vendor-note-input:hover { border-color: #cbd5e1; }
+    .vendor-note-input:focus { outline: none; border-color: #94a3b8; background: #fff; color: var(--text); }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 1200px) {
+      .summary-grid { grid-template-columns: repeat(2,1fr); }
+      .detail-cols  { grid-template-columns: 1fr; }
+      .cogs-grid    { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .summary-grid { grid-template-columns: 1fr; }
+      .app-header .logo-wrap svg { height: 28px; }
+      .app-header .ht-main { font-size: 13px; }
+      .detail-wrap, .month-bar { padding-left: 14px; padding-right: 14px; }
+      .summary-grid { padding: 14px 14px 6px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spin"></div>
+  Connecting to database…
+</div>
+
+<header class="app-header">
+  <div class="logo-wrap">
+    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 786 171" xml:space="preserve">
+      <style>.st0{fill:#F15D3B;}.st1{fill:#FFFFFF;}</style>
+      <g><g>
+        <path class="st0" d="M156.5,140.7c0,7.9-6.4,14.3-14.3,14.3H31.1c-7.9,0-14.3-6.4-14.3-14.3V29.5c0-7.9,6.4-14.3,14.3-14.3h111.2c7.9,0,14.3,6.4,14.3,14.3V140.7z"/>
+        <path class="st0" d="M310.2,140.6c0,7.9-6.4,14.3-14.3,14.3H184.7c-7.9,0-14.3-6.4-14.3-14.3V29.5c0-7.9,6.4-14.3,14.3-14.3h111.2c7.9,0,14.3,6.4,14.3,14.3V140.6z"/>
+        <path class="st0" d="M463.8,140.6c0,7.9-6.4,14.3-14.3,14.3H338.4c-7.9,0-14.3-6.4-14.3-14.3V29.5c0-7.9,6.4-14.3,14.3-14.3h111.2c7.9,0,14.3,6.4,14.3,14.3V140.6z"/>
+        <path class="st0" d="M617.5,140.6c0,7.9-6.4,14.3-14.3,14.3H492c-7.9,0-14.3-6.4-14.3-14.3V29.5c0-7.9,6.4-14.3,14.3-14.3h111.2c7.9,0,14.3,6.4,14.3,14.3V140.6z"/>
+        <path class="st0" d="M771.1,140.6c0,7.9-6.4,14.3-14.3,14.3H645.7c-7.9,0-14.3-6.4-14.3-14.3V29.5c0-7.9,6.4-14.3,14.3-14.3h111.2c7.9,0,14.3,6.4,14.3,14.3V140.6z"/>
+        <path class="st1" d="M70.4,33.9c14.9-14.3,46.3-21.4,53.3,3.3c0.4,3.9-3,7.8-6.9,7.2c-8.9-1.1-16.9-5.4-26.2-2.2c-24.7,8.7-21.4,37-12.3,56.5c8.7-2,28.1-14.5,37.2-11.7c4.1,0.4,5.8,5.2,4.1,9.3c-3.5,9.3-32,12.1-33.3,19.1c-1.7,9.1,10.8,16.5,13.9,25.8c2.8,5.6-9.5,9.1-14.7,6.9c-10.6-6.7-11.3-20.4-21-26c-1.9-0.7-7.6,0.9-11.7-0.4c-3,0.2-4.6-4.5-3.9-7.6c2.4-4.1,10-4.1,9.5-10c-0.9-12.6-6.1-25.8-4.8-38.5C55,52.3,61.7,42.1,70.4,33.9"/>
+        <path class="st1" d="M213.6,78c3.5-12.1,11.3-18.4,13.9-24.5c5.2-11.7,20.4-8.2,28.6,0.9c5.6,6.5,8.7,13.9,10.6,21.2c4.5,17.1-3.5,31.6-14.9,43.7c-4.8,5-16,5.2-21.9,1.9C215.1,112.6,208.8,94.4,213.6,78 M242.1,69.7c-4.8-5-28.1,24.9-5.4,30.1C252.3,103.3,253.8,82.5,242.1,69.7"/>
+        <path class="st1" d="M367.6,77.7c3.5-12.1,11.3-18.4,13.9-24.5c5.2-11.7,20.4-8.2,28.6,0.9c5.6,6.5,8.7,13.9,10.6,21.2c4.5,17.1-3.5,31.6-14.9,43.7c-4.8,5-16,5.2-21.9,1.9C369.1,112.3,362.8,94.1,367.6,77.7 M396.2,69.4c-4.8-5-28.2,24.9-5.4,30.1C406.4,103,407.9,82.2,396.2,69.4"/>
+        <path class="st1" d="M558.8,54.1c5.2-4.3,3-15.6,6.3-22.9c3-5.2,9.3-9.5,14.5-7.4c2.2,1.1,7.1,4.3,6.3,8.4c-12.6,34.2-11.5,71.7-5.2,108.3c0,1.9-5.2,5.2-8.4,5.2c-9.3,1.1-9.3-12.6-14.5-13.6c-8.4,0-16.9,2.4-24.9-3c-10.6-7.1-24-14.5-24-30.3C508.8,71.6,542.2,67.5,558.8,54.1 M555.6,112.3c-1.9-12.6,2.2-24,2.2-36.4c-11.5,0-29.2,6.3-27.1,19.7C532.2,106,544.1,116.4,555.6,112.3"/>
+        <path class="st1" d="M708.5,126.9c-14.1-2.6-30.1-1.8-38-15.1c-5.4-7.2-3.2-21.3,1.8-27.9c16.1-21.7,44.2-14.9,44.6-15.5c1.8-2.8,3-11.7-1.4-12.5c-11.7-2.6-19.1,2.8-29.6,6.4c-8,2.8-9.8-13.3-8-15.1c14.3-9.7,44-15.3,52.9,3.4c8,16.9-1.6,33.8-3,52.3c-0.8,12.1-2,38.6-12.9,31.2C711.4,131.8,711.2,126.9,708.5,126.9 M713.8,82.5c-11.5,4.4-31.6,1-32,18.1c-0.2,8.8,27.9,13.1,29.4,9.4C713,99.8,718.2,93,713.8,82.5"/>
+      </g></g>
+    </svg>
+  </div>
+  <div class="header-divider"></div>
+  <div class="header-titles">
+    <div class="ht-top">@ Qualcomm</div>
+    <div class="ht-main">Declining Balance Dashboard</div>
+  </div>
+  <span class="hdate" id="hdate"></span>
+</header>
+
+<div class="month-bar">
+  <button class="btn-nav" onclick="shiftMonth(-1)">‹ Prev</button>
+  <span class="month-label" id="monthLabel"></span>
+  <button class="btn-nav" onclick="shiftMonth(1)">Next ›</button>
+  <button class="btn-today" onclick="goToday()">Today's Month</button>
+</div>
+
+<div class="view-toggle-bar">
+  <button class="btn-view active" data-mode="summary" onclick="setViewMode('summary')">📊 Account View</button>
+  <button class="btn-view"        data-mode="daily"   onclick="setViewMode('daily')">📅 Daily Sales</button>
+</div>
+
+<div class="summary-grid" id="summaryGrid"></div>
+<div class="detail-wrap"  id="detailWrap"></div>
+<div class="daily-wrap"   id="dailyWrap"></div>
+
+<div class="save-bar">
+  <span class="fb-status syncing" id="fbStatus">⏳ Connecting…</span>
+  <span class="save-indicator" id="saveIndicator">✓ Saved</span>
+  <button class="btn-download" onclick="downloadFile()" title="Download HTML file with all current data">⬇ Download File</button>
+  <button class="btn-reset" onclick="resetToDefaults()" title="Clear saved data and restore original data">↺ Reset Data</button>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════ */
+const ACCTS  = ['WT','AZ','Q','S'];
+const COLORS = { WT:'#2563eb', AZ:'#16a34a', Q:'#dc2626', S:'#9333ea' };
+
+const VENDORS  = ['sysco','obriens','rte','edwardDon','nassau','davidRio'];
+const VLABELS  = { sysco:'Sysco', obriens:"O'Briens", rte:'RTE', edwardDon:'Edward Don', nassau:'Nassau', davidRio:'David Rio' };
+const VCOLORS  = { sysco:'#dc2626', obriens:'#2563eb', rte:'#16a34a', edwardDon:'#f59e0b', nassau:'#8b5cf6', davidRio:'#0ea5e9' };
+// Rough vendor split used for sample data
+const VSPLIT   = { sysco:.40, obriens:.22, rte:.15, edwardDon:.10, nassau:.08, davidRio:.05 };
+
+let vMonth = new Date().getMonth();
+let vYear  = new Date().getFullYear();
+let active      = 'WT';
+let detailTab   = 'entries';   // 'entries' | 'retail' | 'cogs'
+let cogsSubTab  = 'vendors';   // 'vendors' | 'ancillary'
+let viewMode    = 'summary';   // 'summary' | 'daily'
+let chartBal    = null;
+let chartMeal   = null;
+let chartCogs   = null;
+let chartCogsP  = null;
+let chartVendor = null;
+let chartDaily  = null;
+
+function mkId() { return '_' + Math.random().toString(36).slice(2,10); }
+const pad = n => String(n).padStart(2,'0');
+
+/* Real data: Cafe sales by location by day pivot (20).csv — 3/2–3/20/2026 */
+const state = {
+  AZ: { startingBalance: 62000, ancillary: [], retail: [
+    { id: mkId(), date: '3/2/2026',  item: 'Week of 3/2  (AZ + AY)', category: 'Retail', amount: 3448.21, cost: '', note: 'AZ $2,693.89 · AY $754.32' },
+    { id: mkId(), date: '3/9/2026',  item: 'Week of 3/9  (AZ + AY)', category: 'Retail', amount: 2993.88, cost: '', note: 'AZ $2,502.06 · AY $491.82' },
+    { id: mkId(), date: '3/16/2026', item: 'Week of 3/16 (AZ + AY)', category: 'Retail', amount: 2962.64, cost: '', note: 'AZ $2,443.32 · AY $519.32' },
+  ], entries: [
+    { id: mkId(), date: '3/2/2026',  dailySales: 13438.07, sysco: 1612.58, obriens: 886.91, rte: 604.71, edwardDon: 403.14, nassau: 322.51, davidRio: 201.57 },
+    { id: mkId(), date: '3/3/2026',  dailySales: 13570.92, sysco: 1628.52, obriens: 895.68, rte: 610.69, edwardDon: 407.13, nassau: 325.7,  davidRio: 203.56 },
+    { id: mkId(), date: '3/4/2026',  dailySales: 13934.95, sysco: 1672.19, obriens: 919.71, rte: 627.07, edwardDon: 418.05, nassau: 334.44, davidRio: 209.02 },
+    { id: mkId(), date: '3/5/2026',  dailySales: 12500.51, sysco: 1500.06, obriens: 825.03, rte: 562.52, edwardDon: 375.02, nassau: 300.01, davidRio: 187.51 },
+    { id: mkId(), date: '3/6/2026',  dailySales: 11651.90, sysco: 1398.15, obriens: 768.99, rte: 524.31, edwardDon: 349.54, nassau: 279.63, davidRio: 174.77 },
+    { id: mkId(), date: '3/9/2026',  dailySales: 12794.02, sysco: 1535.28, obriens: 844.41, rte: 575.73, edwardDon: 383.82, nassau: 307.06, davidRio: 191.91 },
+    { id: mkId(), date: '3/10/2026', dailySales: 12653.86, sysco: 1518.46, obriens: 835.16, rte: 569.42, edwardDon: 379.62, nassau: 303.69, davidRio: 189.81 },
+    { id: mkId(), date: '3/11/2026', dailySales: 12222.21, sysco: 1466.66, obriens: 806.67, rte: 550.0,  edwardDon: 366.67, nassau: 293.33, davidRio: 183.33 },
+    { id: mkId(), date: '3/12/2026', dailySales: 6.03,     sysco: 0.73,    obriens: 0.4,    rte: 0.27,   edwardDon: 0.18,   nassau: 0.14,   davidRio: 0.09 },
+    { id: mkId(), date: '3/13/2026', dailySales: 7596.08,  sysco: 911.53,  obriens: 501.34, rte: 341.82, edwardDon: 227.88, nassau: 182.31, davidRio: 113.94 },
+    { id: mkId(), date: '3/16/2026', dailySales: 11836.94, sysco: 1420.43, obriens: 781.24, rte: 532.66, edwardDon: 355.11, nassau: 284.09, davidRio: 177.55 },
+    { id: mkId(), date: '3/17/2026', dailySales: 12460.63, sysco: 1495.27, obriens: 822.4,  rte: 560.73, edwardDon: 373.82, nassau: 299.06, davidRio: 186.91 },
+    { id: mkId(), date: '3/18/2026', dailySales: 13062.22, sysco: 1567.47, obriens: 862.11, rte: 587.8,  edwardDon: 391.87, nassau: 313.49, davidRio: 195.93 },
+    { id: mkId(), date: '3/19/2026', dailySales: 12104.46, sysco: 1452.54, obriens: 798.89, rte: 544.7,  edwardDon: 363.13, nassau: 290.51, davidRio: 181.57 },
+    { id: mkId(), date: '3/20/2026', dailySales: 24.03,    sysco: 2.88,    obriens: 1.59,   rte: 1.08,   edwardDon: 0.72,   nassau: 0.58,   davidRio: 0.36 },
+  ]},
+  Q: { startingBalance: 47000, ancillary: [], retail: [
+    { id: mkId(), date: '3/2/2026',  item: 'Week of 3/2  (Q + R)', category: 'Retail', amount: 1048.09, cost: '', note: 'Q $784.17 · R $263.92' },
+    { id: mkId(), date: '3/9/2026',  item: 'Week of 3/9  (Q + R)', category: 'Retail', amount: 1113.66, cost: '', note: 'Q $845.10 · R $268.56' },
+    { id: mkId(), date: '3/16/2026', item: 'Week of 3/16 (Q + R)', category: 'Retail', amount: 1056.58, cost: '', note: 'Q $852.99 · R $203.59' },
+  ], entries: [
+    { id: mkId(), date: '3/2/2026',  dailySales: 4827.94,  sysco: 579.35,  obriens: 318.64, rte: 217.26, edwardDon: 144.84, nassau: 115.87, davidRio: 72.42 },
+    { id: mkId(), date: '3/3/2026',  dailySales: 4935.74,  sysco: 592.28,  obriens: 325.76, rte: 222.11, edwardDon: 148.07, nassau: 118.46, davidRio: 74.04 },
+    { id: mkId(), date: '3/4/2026',  dailySales: 4771.40,  sysco: 572.58,  obriens: 314.91, rte: 214.71, edwardDon: 143.14, nassau: 114.51, davidRio: 71.57 },
+    { id: mkId(), date: '3/5/2026',  dailySales: 5121.48,  sysco: 614.57,  obriens: 338.02, rte: 230.47, edwardDon: 153.64, nassau: 122.92, davidRio: 76.82 },
+    { id: mkId(), date: '3/6/2026',  dailySales: 3866.23,  sysco: 463.95,  obriens: 255.17, rte: 173.98, edwardDon: 115.99, nassau: 92.79,  davidRio: 57.99 },
+    { id: mkId(), date: '3/9/2026',  dailySales: 4649.32,  sysco: 557.92,  obriens: 306.86, rte: 209.22, edwardDon: 139.48, nassau: 111.58, davidRio: 69.74 },
+    { id: mkId(), date: '3/10/2026', dailySales: 4621.06,  sysco: 554.52,  obriens: 304.98, rte: 207.94, edwardDon: 138.63, nassau: 110.9,  davidRio: 69.31 },
+    { id: mkId(), date: '3/11/2026', dailySales: 5009.16,  sysco: 601.09,  obriens: 330.61, rte: 225.41, edwardDon: 150.28, nassau: 120.22, davidRio: 75.14 },
+    { id: mkId(), date: '3/12/2026', dailySales: 0.0,      sysco: 0.0,     obriens: 0.0,    rte: 0.0,    edwardDon: 0.0,    nassau: 0.0,    davidRio: 0.0 },
+    { id: mkId(), date: '3/13/2026', dailySales: 3286.73,  sysco: 394.42,  obriens: 216.92, rte: 147.9,  edwardDon: 98.6,   nassau: 78.88,  davidRio: 49.3 },
+    { id: mkId(), date: '3/16/2026', dailySales: 4755.94,  sysco: 570.71,  obriens: 313.89, rte: 214.02, edwardDon: 142.68, nassau: 114.14, davidRio: 71.34 },
+    { id: mkId(), date: '3/17/2026', dailySales: 4314.65,  sysco: 517.75,  obriens: 284.77, rte: 194.16, edwardDon: 129.44, nassau: 103.55, davidRio: 64.72 },
+    { id: mkId(), date: '3/18/2026', dailySales: 4635.01,  sysco: 556.2,   obriens: 305.91, rte: 208.57, edwardDon: 139.05, nassau: 111.24, davidRio: 69.53 },
+    { id: mkId(), date: '3/19/2026', dailySales: 4506.17,  sysco: 540.73,  obriens: 297.41, rte: 202.78, edwardDon: 135.19, nassau: 108.15, davidRio: 67.59 },
+    { id: mkId(), date: '3/20/2026', dailySales: 0.0,      sysco: 0.0,     obriens: 0.0,    rte: 0.0,    edwardDon: 0.0,    nassau: 0.0,    davidRio: 0.0 },
+  ]},
+  S: { startingBalance: 55000, ancillary: [], retail: [
+    { id: mkId(), date: '3/2/2026',  item: 'Week of 3/2  (S + N)', category: 'Retail', amount: 2353.58, cost: '', note: 'S $1,294.48 · N $1,059.10' },
+    { id: mkId(), date: '3/9/2026',  item: 'Week of 3/9  (S + N)', category: 'Retail', amount: 2188.73, cost: '', note: 'S $1,082.07 · N $1,106.66' },
+    { id: mkId(), date: '3/16/2026', item: 'Week of 3/16 (S + N)', category: 'Retail', amount: 2271.05, cost: '', note: 'S $1,168.80 · N $1,102.25' },
+  ], entries: [
+    { id: mkId(), date: '3/2/2026',  dailySales: 8198.53,  sysco: 983.82,  obriens: 541.1,  rte: 368.93, edwardDon: 245.96, nassau: 196.76, davidRio: 122.99 },
+    { id: mkId(), date: '3/3/2026',  dailySales: 8026.30,  sysco: 963.16,  obriens: 529.74, rte: 361.18, edwardDon: 240.79, nassau: 192.63, davidRio: 120.39 },
+    { id: mkId(), date: '3/4/2026',  dailySales: 7609.77,  sysco: 913.17,  obriens: 502.24, rte: 342.44, edwardDon: 228.29, nassau: 182.63, davidRio: 114.16 },
+    { id: mkId(), date: '3/5/2026',  dailySales: 7057.54,  sysco: 846.9,   obriens: 465.8,  rte: 317.59, edwardDon: 211.73, nassau: 169.38, davidRio: 105.86 },
+    { id: mkId(), date: '3/6/2026',  dailySales: 6968.77,  sysco: 836.25,  obriens: 459.94, rte: 313.59, edwardDon: 209.06, nassau: 167.25, davidRio: 104.54 },
+    { id: mkId(), date: '3/9/2026',  dailySales: 7493.17,  sysco: 899.18,  obriens: 494.55, rte: 337.19, edwardDon: 224.8,  nassau: 179.84, davidRio: 112.39 },
+    { id: mkId(), date: '3/10/2026', dailySales: 7044.43,  sysco: 845.33,  obriens: 464.93, rte: 317.0,  edwardDon: 211.33, nassau: 169.07, davidRio: 105.67 },
+    { id: mkId(), date: '3/11/2026', dailySales: 8063.80,  sysco: 967.66,  obriens: 532.21, rte: 362.87, edwardDon: 241.91, nassau: 193.53, davidRio: 120.96 },
+    { id: mkId(), date: '3/12/2026', dailySales: 36.0,     sysco: 4.32,    obriens: 2.38,   rte: 1.62,   edwardDon: 1.08,   nassau: 0.86,   davidRio: 0.54 },
+    { id: mkId(), date: '3/13/2026', dailySales: 4624.78,  sysco: 554.97,  obriens: 305.24, rte: 208.12, edwardDon: 138.74, nassau: 110.99, davidRio: 69.37 },
+    { id: mkId(), date: '3/16/2026', dailySales: 7514.24,  sysco: 901.71,  obriens: 495.94, rte: 338.14, edwardDon: 225.43, nassau: 180.34, davidRio: 112.71 },
+    { id: mkId(), date: '3/17/2026', dailySales: 7437.85,  sysco: 892.54,  obriens: 490.9,  rte: 334.7,  edwardDon: 223.14, nassau: 178.51, davidRio: 111.57 },
+    { id: mkId(), date: '3/18/2026', dailySales: 7787.40,  sysco: 934.49,  obriens: 513.97, rte: 350.43, edwardDon: 233.62, nassau: 186.9,  davidRio: 116.81 },
+    { id: mkId(), date: '3/19/2026', dailySales: 6644.12,  sysco: 797.29,  obriens: 438.51, rte: 298.99, edwardDon: 199.32, nassau: 159.46, davidRio: 99.67 },
+    { id: mkId(), date: '3/20/2026', dailySales: 8.25,     sysco: 0.99,    obriens: 0.55,   rte: 0.37,   edwardDon: 0.25,   nassau: 0.2,    davidRio: 0.12 },
+  ]},
+  WT: { startingBalance: 85000, ancillary: [], retail: [
+    { id: mkId(), date: '3/2/2026',  item: 'Week of 3/2',  category: 'Retail', amount: 1319.35, cost: '', note: '' },
+    { id: mkId(), date: '3/9/2026',  item: 'Week of 3/9',  category: 'Retail', amount: 1020.15, cost: '', note: '' },
+    { id: mkId(), date: '3/16/2026', item: 'Week of 3/16', category: 'Retail', amount: 1070.20, cost: '', note: '' },
+  ], entries: [
+    { id: mkId(), date: '3/2/2026',  dailySales: 2019.21,  sysco: 242.31,  obriens: 133.27, rte: 90.86,  edwardDon: 60.58,  nassau: 48.46,  davidRio: 30.28 },
+    { id: mkId(), date: '3/3/2026',  dailySales: 2820.65,  sysco: 338.48,  obriens: 186.16, rte: 126.93, edwardDon: 84.62,  nassau: 67.7,   davidRio: 42.31 },
+    { id: mkId(), date: '3/4/2026',  dailySales: 2986.39,  sysco: 358.37,  obriens: 197.1,  rte: 134.39, edwardDon: 89.59,  nassau: 71.67,  davidRio: 44.8 },
+    { id: mkId(), date: '3/5/2026',  dailySales: 2751.33,  sysco: 330.16,  obriens: 181.59, rte: 123.81, edwardDon: 82.54,  nassau: 66.03,  davidRio: 41.27 },
+    { id: mkId(), date: '3/6/2026',  dailySales: 2026.03,  sysco: 243.12,  obriens: 133.72, rte: 91.17,  edwardDon: 60.78,  nassau: 48.62,  davidRio: 30.4 },
+    { id: mkId(), date: '3/9/2026',  dailySales: 2610.87,  sysco: 313.3,   obriens: 172.32, rte: 117.49, edwardDon: 78.33,  nassau: 62.66,  davidRio: 39.16 },
+    { id: mkId(), date: '3/10/2026', dailySales: 2697.97,  sysco: 323.76,  obriens: 178.07, rte: 121.41, edwardDon: 80.94,  nassau: 64.75,  davidRio: 40.46 },
+    { id: mkId(), date: '3/11/2026', dailySales: 2289.08,  sysco: 274.69,  obriens: 151.08, rte: 103.01, edwardDon: 68.67,  nassau: 54.94,  davidRio: 34.33 },
+    { id: mkId(), date: '3/12/2026', dailySales: 128.58,   sysco: 15.41,   obriens: 8.49,   rte: 5.79,   edwardDon: 3.86,   nassau: 3.09,   davidRio: 1.93 },
+    { id: mkId(), date: '3/13/2026', dailySales: 1391.23,  sysco: 166.95,  obriens: 91.82,  rte: 62.61,  edwardDon: 41.74,  nassau: 33.39,  davidRio: 20.86 },
+    { id: mkId(), date: '3/16/2026', dailySales: 2027.78,  sysco: 243.33,  obriens: 133.83, rte: 91.25,  edwardDon: 60.83,  nassau: 48.67,  davidRio: 30.42 },
+    { id: mkId(), date: '3/17/2026', dailySales: 2592.06,  sysco: 311.05,  obriens: 171.08, rte: 116.64, edwardDon: 77.76,  nassau: 62.21,  davidRio: 38.88 },
+    { id: mkId(), date: '3/18/2026', dailySales: 2249.42,  sysco: 269.93,  obriens: 148.46, rte: 101.22, edwardDon: 67.48,  nassau: 53.99,  davidRio: 33.75 },
+    { id: mkId(), date: '3/19/2026', dailySales: 2370.88,  sysco: 284.39,  obriens: 156.41, rte: 106.64, edwardDon: 71.1,   nassau: 56.88,  davidRio: 35.54 },
+    { id: mkId(), date: '3/20/2026', dailySales: 105.93,   sysco: 12.71,   obriens: 6.99,   rte: 4.77,   edwardDon: 3.18,   nassau: 2.54,   davidRio: 1.59 },
+  ]},
+};
+
+/* ══════════════════════════════════════════════
+   FIREBASE  —  Realtime Database
+══════════════════════════════════════════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyCL_Nfy1M7EyjpAyr0Vv-4HGkmecL2KZi0",
+  authDomain: "fooda-dec-balance.firebaseapp.com",
+  databaseURL: "https://fooda-dec-balance-default-rtdb.firebaseio.com",
+  projectId: "fooda-dec-balance",
+  storageBucket: "fooda-dec-balance.firebasestorage.app",
+  messagingSenderId: "894790014960",
+  appId: "1:894790014960:web:bbb03a6184b79a9c4f6f35"
+};
+
+let db = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  } else {
+    console.warn('Firebase SDK not loaded');
+  }
+} catch(e) {
+  console.warn('Firebase init error:', e);
+}
+const DB_REF = 'fooda_qualcomm_v1';
+
+// Deep-clone the built-in default state so we can restore it
+const DEFAULT_STATE = JSON.parse(JSON.stringify(state));
+
+let saveTimer    = null;
+let fbWriteTimer = null;
+let isLoaded     = false;
+
+function setStatus(mode, text) {
+  const el = document.getElementById('fbStatus');
+  if (!el) return;
+  el.className = 'fb-status ' + mode;
+  el.textContent = text;
+}
+
+/* ── Write to Firebase (debounced 600ms) ── */
+function saveState() {
+  // Flash "Saved" indicator
+  const el = document.getElementById('saveIndicator');
+  if (el) {
+    el.classList.add('show');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => el.classList.remove('show'), 1800);
+  }
+  // Debounce Firebase write so rapid edits don't thrash
+  clearTimeout(fbWriteTimer);
+  fbWriteTimer = setTimeout(() => {
+    if (!db) return;
+    setStatus('syncing', '⏫ Saving…');
+    const payload = { state, vMonth, vYear, active, detailTab, viewMode, savedAt: Date.now() };
+    db.ref(DB_REF).set(payload)
+      .then(() => setStatus('connected', '🟢 Live'))
+      .catch(e => { console.warn('Firebase write error:', e); setStatus('disconnected', '🔴 Offline'); });
+  }, 600);
+}
+
+/* ── Listen for remote changes and re-render ── */
+function startListening() {
+  if (!db) {
+    // Firebase unavailable — run offline with localStorage
+    setStatus('disconnected', '🔴 Offline mode');
+    const raw = localStorage.getItem('fooda_qualcomm_v5');
+    if (raw) try { const p = JSON.parse(raw); Object.assign(state, p.state || {}); } catch(e) {}
+    ensureMonthDays(vMonth, vYear);
+    render();
+    document.getElementById('loadingOverlay').style.display = 'none';
+    return;
+  }
+
+  db.ref(DB_REF).on('value', snapshot => {
+    const payload = snapshot.val();
+    if (!payload || !payload.state) {
+      // Nothing in DB yet — push our default state up
+      isLoaded = true;
+      saveState();
+      ensureMonthDays(vMonth, vYear);
+      render();
+      document.getElementById('loadingOverlay').style.display = 'none';
+      return;
+    }
+    // Merge remote state into local
+    ACCTS.forEach(acct => {
+      if (payload.state[acct]) {
+        state[acct].startingBalance = payload.state[acct].startingBalance ?? state[acct].startingBalance;
+        state[acct].entries         = payload.state[acct].entries ?? [];
+        state[acct].ancillary       = payload.state[acct].ancillary ?? [];
+        state[acct].retail          = payload.state[acct].retail ?? [];
+      }
+    });
+    if (payload.vMonth != null) vMonth    = payload.vMonth;
+    if (payload.vYear  != null) vYear     = payload.vYear;
+    if (payload.active)         active    = payload.active;
+    if (payload.detailTab)      detailTab = payload.detailTab;
+    if (payload.viewMode)       viewMode  = payload.viewMode;
+    isLoaded = true;
+    setStatus('connected', '🟢 Live');
+    ensureMonthDays(vMonth, vYear);
+    render();
+    document.getElementById('loadingOverlay').style.display = 'none';
+  }, err => {
+    console.warn('Firebase read error:', err);
+    setStatus('disconnected', '🔴 Offline — edits local only');
+    // Fall back to localStorage
+    const raw = localStorage.getItem('fooda_qualcomm_v5');
+    if (raw) try { const p = JSON.parse(raw); Object.assign(state, p.state || {}); } catch(e) {}
+    isLoaded = true;
+    ensureMonthDays(vMonth, vYear);
+    render();
+    document.getElementById('loadingOverlay').style.display = 'none';
+  });
+
+  // Connection state indicator
+  if (db) db.ref('.info/connected').on('value', snap => {
+    if (!snap.val()) setStatus('disconnected', '🔴 Offline');
+  });
+}
+
+function resetToDefaults() {
+  if (!confirm('Reset ALL data for all managers to defaults? This cannot be undone.')) return;
+  ACCTS.forEach(acct => {
+    state[acct].startingBalance = DEFAULT_STATE[acct].startingBalance;
+    state[acct].entries = JSON.parse(JSON.stringify(DEFAULT_STATE[acct].entries));
+  });
+  vMonth = new Date().getMonth();
+  vYear  = new Date().getFullYear();
+  active = 'WT'; detailTab = 'entries'; viewMode = 'summary';
+  render();
+  saveState();
+}
+
+/* ══════════════════════════════════════════════
+   HELPERS
+══════════════════════════════════════════════ */
+const fmt  = v => '$' + Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtK = v => { const a=Math.abs(v); return a>=1000?'$'+(a/1000).toFixed(1)+'k':'$'+a.toFixed(0); };
+
+function rowSales(e) {
+  return parseFloat(e.dailySales) || 0;
+}
+function rowSpend(e) {
+  return VENDORS.reduce((s,v) => s + (parseFloat(e[v])||0), 0);
+}
+
+function parseDate(dateStr) {
+  // Handles both M/D/YYYY and YYYY-MM-DD
+  if (!dateStr) return null;
+  if (dateStr.includes('-')) return new Date(dateStr + 'T00:00:00');
+  const parts = dateStr.split('/');
+  if (parts.length === 3) return new Date(parseInt(parts[2]), parseInt(parts[0])-1, parseInt(parts[1]));
+  return new Date(dateStr);
+}
+
+function monthEntries(acct) {
+  return state[acct].entries
+    .filter(e => {
+      if (!e.date) return false;
+      const d = parseDate(e.date);
+      return d && d.getMonth() === vMonth && d.getFullYear() === vYear;
+    })
+    .sort((a,b) => parseDate(a.date) - parseDate(b.date));
+}
+
+function runningRows(acct) {
+  const rows = monthEntries(acct);
+  const ancByDate = {};
+  ancillaryMonthEntries(acct).forEach(a => {
+    ancByDate[a.date] = (ancByDate[a.date]||0) + (parseFloat(a.amount)||0);
+  });
+  let bal = state[acct].startingBalance;
+  return rows.map(e => {
+    const sales = rowSales(e);
+    const sp    = rowSpend(e) + (ancByDate[e.date]||0);
+    bal = bal + sales - sp;
+    return { ...e, totalSales: sales, totalSpend: sp, runBal: bal };
+  });
+}
+
+function currentBalance(acct) {
+  const rows = runningRows(acct);
+  return rows.length ? rows[rows.length-1].runBal : state[acct].startingBalance;
+}
+
+function ancillaryMonthEntries(acct) {
+  return (state[acct].ancillary || []).filter(a => {
+    if (!a.date) return false;
+    const d = parseDate(a.date);
+    return d && d.getMonth() === vMonth && d.getFullYear() === vYear;
+  }).sort((a,b) => parseDate(a.date) - parseDate(b.date));
+}
+
+function monthTotals(acct) {
+  const rows  = monthEntries(acct);
+  const sales = rows.reduce((s,e)=>s+(parseFloat(e.dailySales)||0),0);
+  const vendors = {};
+  VENDORS.forEach(v => { vendors[v] = rows.reduce((s,e)=>s+(parseFloat(e[v])||0),0); });
+  const vendorSpend = VENDORS.reduce((s,v)=>s+vendors[v],0);
+  const ancSpend = ancillaryMonthEntries(acct).reduce((s,a)=>s+(parseFloat(a.amount)||0),0);
+  const spend = vendorSpend + ancSpend;
+  return { sales, spend, vendorSpend, ancSpend, net: sales-spend, vendors };
+}
+
+function getMonthName(m,y) {
+  return new Date(y,m,1).toLocaleString('en-US',{month:'long',year:'numeric'});
+}
+
+function balClass(val, start) {
+  if (start <= 0) return '';
+  const p = val/start;
+  if (p > .5) return 'c-green';
+  if (p > .2) return 'c-amber';
+  return 'c-red';
+}
+
+/* ── Ensure every calendar day of a month has an entry for every account ── */
+function ensureMonthDays(m, y) {
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  let added = false;
+  ACCTS.forEach(acct => {
+    if (!state[acct].ancillary) { state[acct].ancillary = []; added = true; }
+    if (!state[acct].retail)    { state[acct].retail    = []; added = true; }
+    const existing = new Set(state[acct].entries.map(e => e.date));
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${m+1}/${d}/${y}`;
+      if (!existing.has(dateStr)) {
+        const newEntry = { id: mkId(), date: dateStr, dailySales: 0 };
+        VENDORS.forEach(v => { newEntry[v] = ''; });
+        state[acct].entries.push(newEntry);
+        existing.add(dateStr);
+        added = true;
+      }
+    }
+  });
+  if (added) saveState();
+}
+
+/* ══════════════════════════════════════════════
+   RENDER
+══════════════════════════════════════════════ */
+function render() {
+  ensureMonthDays(vMonth, vYear);
+  document.getElementById('hdate').textContent =
+    new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('monthLabel').textContent = getMonthName(vMonth,vYear);
+
+  const isDaily = viewMode === 'daily';
+  document.getElementById('summaryGrid').style.display = isDaily ? 'none' : '';
+  document.getElementById('detailWrap').style.display  = isDaily ? 'none' : '';
+  document.getElementById('dailyWrap').style.display   = isDaily ? 'block' : 'none';
+
+  document.querySelectorAll('.btn-view').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === viewMode));
+
+  if (isDaily) renderDailyView();
+  else { renderSummary(); renderDetail(); }
+}
+
+function setViewMode(mode) { viewMode = mode; render(); saveState(); }
+
+/* ── Daily Sales cross-cafe view ── */
+function renderDailyView() {
+  const allDates = new Set();
+  ACCTS.forEach(acct => monthEntries(acct).forEach(e => allDates.add(e.date)));
+  const dates = [...allDates].sort((a,b) => parseDate(a) - parseDate(b));
+
+  const dw = document.getElementById('dailyWrap');
+  if (!dates.length) {
+    dw.innerHTML = `<div class="empty-state"><div class="ei">📅</div>No entries for ${getMonthName(vMonth,vYear)}</div>`;
+    return;
+  }
+
+  /* build lookup: acct|date → {total} */
+  const dm = {};
+  ACCTS.forEach(acct => {
+    monthEntries(acct).forEach(e => {
+      dm[`${acct}|${e.date}`] = { total: parseFloat(e.dailySales)||0 };
+    });
+  });
+
+  const dayStr  = d => parseDate(d).toLocaleDateString('en-US',{weekday:'short'});
+  const dateStr = d => parseDate(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const weekOf  = d => { const dt=parseDate(d); return Math.ceil((dt.getDate()+((dt.getDay()||7)-1))/7); };
+
+  /* table rows — grouped by week with separator */
+  let prevWeek = -1;
+  const tableRows = dates.map(date => {
+    const wk = weekOf(date);
+    const weekBanner = wk !== prevWeek
+      ? `<tr class="week-hdr"><td colspan="7">Week ${wk} — ${getMonthName(vMonth,vYear)}</td></tr>`
+      : '';
+    prevWeek = wk;
+
+    const acctCells = ACCTS.map(acct => {
+      const d = dm[`${acct}|${date}`];
+      if (!d || d.total === 0) return `<td class="d-zero">—</td>`;
+      return `<td><span class="d-val">${fmt(d.total)}</span></td>`;
+    });
+
+    const rowTotal = ACCTS.reduce((s,a)=>s+(dm[`${a}|${date}`]?.total||0),0);
+    return weekBanner + `<tr>
+      <td class="date-cell">${dateStr(date)}</td>
+      <td class="day-cell">${dayStr(date)}</td>
+      ${acctCells.join('')}
+      <td><span class="d-val" style="color:var(--fooda)">${fmt(rowTotal)}</span></td>
+    </tr>`;
+  }).join('');
+
+  /* footer totals */
+  const footerCells = ACCTS.map(acct => {
+    const tot = dates.reduce((s,d)=>s+(dm[`${acct}|${d}`]?.total||0),0);
+    return `<td>${fmt(tot)}</td>`;
+  });
+  const grandTotal = ACCTS.reduce((s,a)=>s+dates.reduce((ss,d)=>ss+(dm[`${a}|${d}`]?.total||0),0),0);
+
+  dw.innerHTML = `
+  <div class="daily-chart-card">
+    <h3>Daily Sales by Cafe — ${getMonthName(vMonth,vYear)}</h3>
+    <div class="chart-sub">Total food sales per operating day across all four locations</div>
+    <div class="daily-chart-wrap"><canvas id="dailyCanvas"></canvas></div>
+  </div>
+  <div class="daily-tbl-card">
+    <div class="tbl-head">
+      <h3>Day-by-Day Sales Breakdown</h3>
+      <span style="font-size:11px;color:var(--muted)">${dates.length} operating days · ${getMonthName(vMonth,vYear)}</span>
+    </div>
+    <div class="daily-tbl-scroll">
+      <table class="daily-tbl">
+        <thead><tr>
+          <th class="lft">Date</th><th>Day</th>
+          <th class="az-h">Cafe AZ</th>
+          <th class="q-h">Cafe Q</th>
+          <th class="s-h">Cafe S</th>
+          <th class="wt-h">Cafe WT</th>
+          <th class="tot-h">All Cafes</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+        <tfoot><tr>
+          <td class="lft" colspan="2">MTD TOTAL</td>
+          ${footerCells.join('')}
+          <td>${fmt(grandTotal)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+  </div>`;
+
+  buildDailyChart(dates, dm);
+}
+
+function buildDailyChart(dates, dm) {
+  const canvas = document.getElementById('dailyCanvas');
+  if (!canvas) return;
+  if (chartDaily) { chartDaily.destroy(); chartDaily = null; }
+
+  const labels = dates.map(d =>
+    parseDate(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+
+  chartDaily = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: ACCTS.map(acct => ({
+        label: 'Cafe ' + acct,
+        data: dates.map(d => dm[`${acct}|${d}`]?.total || 0),
+        backgroundColor: COLORS[acct] + 'CC',
+        borderColor: COLORS[acct],
+        borderWidth: 1,
+        borderRadius: 3,
+        borderSkipped: false,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'bottom', labels:{font:{size:10},boxWidth:10,padding:12} },
+        tooltip: { callbacks: {
+          label: c => ` Cafe ${c.dataset.label.split(' ')[1]}: ${fmt(c.raw)}`
+        }}
+      },
+      scales: {
+        x: { grid:{display:false}, ticks:{maxRotation:45,font:{size:9}} },
+        y: { ticks:{callback:v=>'$'+(v/1000).toFixed(0)+'k',font:{size:10}}, grid:{color:'#f1f5f9'} }
+      }
+    }
+  });
+}
+
+/* ── Summary cards ── */
+function renderSummary() {
+  document.getElementById('summaryGrid').innerHTML = ACCTS.map(acct => {
+    const col   = COLORS[acct];
+    const bal   = currentBalance(acct);
+    const start = state[acct].startingBalance;
+    const pct   = start > 0 ? Math.max(0,Math.min(100,(bal/start)*100)) : 0;
+    const t     = monthTotals(acct);
+    const isAct = acct === active;
+    const bc    = balClass(bal, start);
+    return `
+    <div class="s-card ${isAct?'active':''}" style="${isAct?`border-color:${col}`:''}" onclick="setActive('${acct}')">
+      <div class="acct-label" style="color:${col}">${acct}</div>
+      <div class="bal-big ${bc}">${fmt(bal)}</div>
+      <div class="bal-sub">of ${fmt(start)} starting balance</div>
+      <div class="pbar"><div class="pbar-fill" style="width:${pct}%;background:${col}"></div></div>
+      <div class="mini-stats">
+        <span><span class="val c-green">↑ ${fmtK(t.sales)}</span>Sales</span>
+        <span><span class="val c-red">↓ ${fmtK(t.spend)}</span>Spend</span>
+        <span><span class="val ${t.net>=0?'c-green':'c-red'}">${t.net>=0?'+':''}${fmtK(t.net)}</span>Net</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ── Account detail ── */
+function renderDetail() {
+  const acct  = active;
+  const col   = COLORS[acct];
+  const bal   = currentBalance(acct);
+  const start = state[acct].startingBalance;
+  const t     = monthTotals(acct);
+  const rows  = runningRows(acct);
+
+  document.getElementById('detailWrap').innerHTML = `
+  <div class="detail-topbar">
+    <span class="acct-pill" style="background:${col}">${acct}</span>
+    <h2>${getMonthName(vMonth,vYear)}</h2>
+  </div>
+
+  <div class="bal-editor">
+    <label>Starting Balance</label>
+    <div class="bal-input-wrap">
+      <span>$</span>
+      <input type="number" value="${start}" min="0" step="500"
+        style="border-color:${col}40;color:${col}"
+        onchange="updateStartBal('${acct}',this.value)" />
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="kv c-green">${fmt(t.sales)}</div><div class="kl">Total Sales</div></div>
+      <div class="kpi"><div class="kv c-red">${fmt(t.spend)}</div><div class="kl">Total Spend</div></div>
+      <div class="kpi"><div class="kv ${t.net>=0?'c-green':'c-red'}">${t.net>=0?'+':''}${fmt(t.net)}</div><div class="kl">Net</div></div>
+      <div class="kpi"><div class="kv" style="color:${col}">${fmt(bal)}</div><div class="kl">Balance</div></div>
+    </div>
+  </div>
+
+  <div class="dtab-bar">
+    <button class="dtab ${detailTab==='entries'?'active':''}" style="${detailTab==='entries'?`color:${col};border-bottom-color:${col}`:''}" onclick="switchTab('entries')">
+      📋 Daily Entries
+    </button>
+    <button class="dtab ${detailTab==='retail'?'active':''}" style="${detailTab==='retail'?'color:#0ea5e9;border-bottom-color:#0ea5e9':''}" onclick="switchTab('retail')">
+      🛍 Retail Sales
+    </button>
+    <button class="dtab ${detailTab==='cogs'?'active':''}" style="${detailTab==='cogs'?`color:#dc2626;border-bottom-color:#dc2626`:''}" onclick="switchTab('cogs')">
+      💰 Spend / COGs
+    </button>
+  </div>
+
+  <div id="tabContent"></div>`;
+
+  renderTabContent(acct, rows, t);
+}
+
+function renderTabContent(acct, rows, t) {
+  if (detailTab === 'entries') renderEntriesTab(acct, rows);
+  else if (detailTab === 'retail') renderRetailTab(acct);
+  else renderCogsTab(acct, rows, t);
+}
+
+/* ── Entries tab ── */
+function renderEntriesTab(acct, rows) {
+  document.getElementById('tabContent').innerHTML = `
+  <div class="detail-cols">
+    <div class="tbl-card">
+      <div class="tbl-head">
+        <h3>Daily Entries — ${getMonthName(vMonth,vYear)}</h3>
+      </div>
+      <div class="tbl-scroll">${buildTable(acct, rows)}</div>
+    </div>
+    <div class="chart-card">
+      <h3>Balance Trend</h3>
+      <div class="chart-sub">Running balance — ${getMonthName(vMonth,vYear)}</div>
+      <div class="chart-wrap"><canvas id="balCanvas"></canvas></div>
+    </div>
+  </div>`;
+  buildBalChart(acct, rows);
+}
+
+/* ── Retail Sales tab ── */
+function renderRetailTab(acct) {
+  document.getElementById('tabContent').innerHTML = buildRetailTab(acct);
+}
+
+function retailMonthEntries(acct) {
+  return (state[acct].retail || []).filter(r => {
+    if (!r.date) return false;
+    const d = parseDate(r.date);
+    return d && d.getMonth() === vMonth && d.getFullYear() === vYear;
+  }).sort((a,b) => parseDate(a.date) - parseDate(b.date));
+}
+
+function buildRetailTab(acct) {
+  const col   = COLORS[acct];
+  const items = retailMonthEntries(acct);
+  const totalSales  = items.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  const totalCost   = items.reduce((s,r)=>s+(parseFloat(r.cost)||0),0);
+  const totalProfit = totalSales - totalCost;
+
+  // Group by category for summary
+  const cats = {};
+  items.forEach(r => {
+    const c = r.category || 'Uncategorized';
+    if (!cats[c]) cats[c] = { sales:0, cost:0, count:0 };
+    cats[c].sales += parseFloat(r.amount)||0;
+    cats[c].cost  += parseFloat(r.cost)||0;
+    cats[c].count++;
+  });
+
+  const catCards = Object.entries(cats).map(([c, v]) => `
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;border-top:3px solid #0ea5e9">
+      <div style="font-size:11px;font-weight:700;color:#0ea5e9;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${escHtml(c)}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(v.sales)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${v.count} item${v.count!==1?'s':''} · margin ${v.sales>0?((v.sales-v.cost)/v.sales*100).toFixed(1):0}%</div>
+    </div>`).join('');
+
+  const rows = items.length ? items.map(r => {
+    const profit = (parseFloat(r.amount)||0) - (parseFloat(r.cost)||0);
+    const margin = (parseFloat(r.amount)||0) > 0 ? profit/(parseFloat(r.amount)||1)*100 : 0;
+    return `
+    <tr>
+      <td style="width:110px;white-space:nowrap">
+        <input type="date" value="${toInputDate(r.date)}"
+          onchange="updRetail('${acct}','${r.id}','date',fromInputDate(this.value))" />
+      </td>
+      <td>
+        <input type="text" value="${escHtml(r.item||'')}" placeholder="Item / product name…"
+          style="border:1px solid transparent;border-radius:5px;padding:4px 6px;font-size:13px;width:100%;background:transparent;font-family:inherit;color:var(--text)"
+          onfocus="this.style.borderColor='#94a3b8';this.style.background='#fff'"
+          onblur="this.style.borderColor='transparent';this.style.background='transparent'"
+          onchange="updRetail('${acct}','${r.id}','item',this.value)" />
+      </td>
+      <td style="width:130px">
+        <input type="text" value="${escHtml(r.category||'')}" placeholder="Category…"
+          style="border:1px solid transparent;border-radius:5px;padding:4px 6px;font-size:13px;width:100%;background:transparent;font-family:inherit;color:var(--muted)"
+          onfocus="this.style.borderColor='#94a3b8';this.style.background='#fff'"
+          onblur="this.style.borderColor='transparent';this.style.background='transparent'"
+          onchange="updRetail('${acct}','${r.id}','category',this.value)" />
+      </td>
+      <td style="width:110px">
+        <input type="number" value="${r.amount||''}" placeholder="0.00" min="0" step="0.01"
+          style="border-bottom:2px solid #0ea5e955;text-align:right;width:100%"
+          onchange="updRetail('${acct}','${r.id}','amount',this.value)" />
+      </td>
+      <td style="width:110px">
+        <input type="number" value="${r.cost||''}" placeholder="0.00" min="0" step="0.01"
+          style="border-bottom:2px solid #dc262633;text-align:right;width:100%"
+          onchange="updRetail('${acct}','${r.id}','cost',this.value)" />
+      </td>
+      <td class="num" style="font-weight:700;color:${profit>=0?'#16a34a':'#dc2626'}">
+        ${profit!==0?(profit>=0?'+':'')+fmt(profit):'—'}
+      </td>
+      <td class="num" style="font-size:11px;color:${margin>=50?'#16a34a':margin>=20?'#d97706':'#dc2626'}">
+        ${(parseFloat(r.amount)||0)>0?margin.toFixed(1)+'%':'—'}
+      </td>
+      <td>
+        <textarea class="vendor-note-input" rows="1" placeholder="Notes…"
+          onchange="updRetail('${acct}','${r.id}','note',this.value)">${escHtml(r.note||'')}</textarea>
+      </td>
+      <td style="width:36px">
+        <button class="btn-del" onclick="delRetail('${acct}','${r.id}')" title="Delete">×</button>
+      </td>
+    </tr>`;
+  }).join('')
+  : `<tr><td colspan="9" style="padding:32px;text-align:center;color:var(--muted)">
+      No retail entries yet. Click <strong>+ Add Item</strong> to start.
+    </td></tr>`;
+
+  return `
+  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 22px;display:flex;gap:28px;margin-bottom:18px;flex-wrap:wrap">
+    <div style="text-align:center">
+      <div style="font-size:22px;font-weight:800;color:#0ea5e9">${fmt(totalSales)}</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Total Retail Sales</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:22px;font-weight:800;color:#dc2626">${fmt(totalCost)}</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Total Cost</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:22px;font-weight:800;color:${totalProfit>=0?'#16a34a':'#dc2626'}">${totalProfit>=0?'+':''}${fmt(totalProfit)}</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Gross Profit</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:22px;font-weight:800;color:#8b5cf6">${totalSales>0?((totalProfit/totalSales)*100).toFixed(1)+'%':'—'}</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Margin</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--text)">${items.length}</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px">Items</div>
+    </div>
+  </div>
+
+  ${Object.keys(cats).length ? `
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:18px">
+    ${catCards}
+  </div>` : ''}
+
+  <div class="anc-tbl-card">
+    <div class="anc-tbl-head">
+      <h3>🛍 Retail Sales — ${getMonthName(vMonth,vYear)}</h3>
+      <button class="btn-add" style="background:#0ea5e9" onclick="addRetail('${acct}')">+ Add Item</button>
+    </div>
+    <div class="tbl-scroll">
+      <table style="min-width:780px">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Item</th>
+            <th>Category</th>
+            <th class="num" style="color:#0ea5e9">Sale Price</th>
+            <th class="num" style="color:#dc2626">Cost</th>
+            <th class="num" style="color:#16a34a">Profit</th>
+            <th class="num" style="color:#8b5cf6">Margin</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        ${items.length ? `<tfoot>
+          <tr class="tfoot-row">
+            <td colspan="3">TOTALS</td>
+            <td class="num" style="color:#0ea5e9">${fmt(totalSales)}</td>
+            <td class="num" style="color:#dc2626">${fmt(totalCost)}</td>
+            <td class="num" style="color:${totalProfit>=0?'#16a34a':'#dc2626'}">${totalProfit>=0?'+':''}${fmt(totalProfit)}</td>
+            <td class="num" style="color:#8b5cf6">${totalSales>0?((totalProfit/totalSales)*100).toFixed(1)+'%':'—'}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
+    </div>
+  </div>`;
+}
+
+
+function renderCogsTab(acct, rows, t) {
+  const cogsP   = t.sales > 0 ? (t.spend / t.sales * 100) : 0;
+  const avgDail = rows.filter(r=>rowSpend(r)>0).length > 0 ? t.vendorSpend / rows.filter(r=>rowSpend(r)>0).length : 0;
+  const pctCls  = cogsP < 30 ? 'pct-green' : cogsP < 50 ? 'pct-amber' : 'pct-red';
+  const pctBarC = cogsP < 30 ? '#16a34a'   : cogsP < 50 ? '#d97706'   : '#dc2626';
+
+  // Build per-row cogs detail — only show days with sales or spend
+  let cumSpend = 0;
+  const cogsRows = rows.filter(r => (parseFloat(r.dailySales)||0) > 0 || rowSpend(r) > 0).map(r => {
+    const sp    = rowSpend(r);
+    const sales = r.totalSales;
+    cumSpend += sp;
+    const dayPct = sales > 0 ? (sp/sales*100) : 0;
+    const vAmts  = {};
+    VENDORS.forEach(v => { vAmts[v] = parseFloat(r[v])||0; });
+    return { ...r, sp, sales, dayPct, cumSpend, vAmts };
+  });
+
+  // Vendor summary cards
+  const vendorCards = VENDORS.map(v => {
+    const tot  = t.vendors[v];
+    const pct  = t.vendorSpend > 0 ? (tot/t.vendorSpend*100) : 0;
+    const col  = VCOLORS[v];
+    return `
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;border-top:3px solid ${col}">
+      <div style="font-size:11px;font-weight:700;color:${col};text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${VLABELS[v]}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(tot)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${pct.toFixed(1)}% of vendor spend</div>
+      <div class="pbar" style="margin-top:6px"><div class="pbar-fill" style="width:${pct}%;background:${col}"></div></div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('tabContent').innerHTML = `
+  <div class="cogs-kpi-bar">
+    <div class="ck">
+      <div class="cv c-red">${fmt(t.spend)}</div>
+      <div class="cl">MTD Total Spend</div>
+      <div class="cogs-pct-bar"><div class="cogs-pct-fill" style="width:${Math.min(100,cogsP)}%;background:${pctBarC}"></div></div>
+    </div>
+    <div class="ck">
+      <div class="cv ${pctCls}">${cogsP.toFixed(1)}%</div>
+      <div class="cl">COGs % of Sales</div>
+    </div>
+    <div class="ck">
+      <div class="cv c-red">${fmt(t.vendorSpend)}</div>
+      <div class="cl">Vendor Spend</div>
+    </div>
+    <div class="ck">
+      <div class="cv" style="color:#f59e0b">${fmt(t.ancSpend)}</div>
+      <div class="cl">Ancillary Spend</div>
+    </div>
+    <div class="ck">
+      <div class="cv c-green">${fmt(t.sales)}</div>
+      <div class="cl">MTD Total Sales</div>
+    </div>
+    <div class="ck">
+      <div class="cv ${t.net>=0?'c-green':'c-red'}">${t.net>=0?'+':''}${fmt(t.net)}</div>
+      <div class="cl">Net (Sales − Spend)</div>
+    </div>
+  </div>
+
+  <div class="cogs-subtab-bar">
+    <button class="cogs-stab ${cogsSubTab==='vendors'?'active':''}"
+      style="${cogsSubTab==='vendors'?'color:#dc2626;border-bottom-color:#dc2626':''}"
+      onclick="switchCogsSubTab('vendors')">📦 Vendor Spend</button>
+    <button class="cogs-stab ${cogsSubTab==='ancillary'?'active':''}"
+      style="${cogsSubTab==='ancillary'?'color:#f59e0b;border-bottom-color:#f59e0b':''}"
+      onclick="switchCogsSubTab('ancillary')">🧾 Ancillary Invoices</button>
+  </div>
+
+  <div id="cogsSubContent"></div>`;
+
+  renderCogsSubTab(acct, cogsRows, t, vendorCards);
+}
+
+function switchCogsSubTab(tab) { cogsSubTab = tab; render(); }
+
+function renderCogsSubTab(acct, cogsRows, t, vendorCards) {
+  const el = document.getElementById('cogsSubContent');
+  if (!el) return;
+  if (cogsSubTab === 'vendors') {
+    el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px">
+      ${vendorCards}
+    </div>
+    <div class="cogs-grid">
+      <div class="cogs-tbl-card">
+        <div class="cogs-tbl-head"><h3>Daily Spend by Vendor</h3></div>
+        <div class="tbl-scroll">${buildCogsTable(acct, cogsRows)}</div>
+      </div>
+      <div class="cogs-chart-card">
+        <h3>Daily Spend by Vendor</h3>
+        <div class="chart-sub">Stacked bars — hover for detail</div>
+        <div class="cogs-chart-wrap"><canvas id="cogsCanvas"></canvas></div>
+        <hr class="chart-divider">
+        <div class="sub-h">Vendor Share of MTD Spend</div>
+        <div class="cogs-chart-wrap2"><canvas id="cogsCumCanvas"></canvas></div>
+      </div>
+    </div>`;
+    buildCogsChart(acct, cogsRows);
+    buildVendorDonut(acct, t);
+  } else {
+    el.innerHTML = buildAncillaryTab(acct);
+  }
+}
+
+/* ── COGs Table — vendor columns ── */
+function buildCogsTable(acct, cogsRows) {
+  if (!cogsRows.length) return `
+    <div class="empty-state"><div class="ei">📊</div><div>No spend entries yet. Add rows in Daily Entries.</div></div>`;
+
+  const tSales = cogsRows.reduce((s,r)=>s+r.sales,0);
+  const tSpend = cogsRows.reduce((s,r)=>s+r.sp,0);
+  const tPct   = tSales > 0 ? tSpend/tSales*100 : 0;
+  const vTots  = {};
+  VENDORS.forEach(v => { vTots[v] = cogsRows.reduce((s,r)=>s+r.vAmts[v],0); });
+
+  return `<table style="min-width:900px">
+    <thead>
+      <tr>
+        <th>Date</th>
+        ${VENDORS.map(v=>`<th class="num" style="color:${VCOLORS[v]}">${VLABELS[v]}</th>`).join('')}
+        <th class="num">Total Spend</th>
+        <th class="num">Sales</th>
+        <th class="num">COGs %</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+    ${cogsRows.map(r => {
+      const pcCls = r.dayPct < 30 ? 'pct-green' : r.dayPct < 50 ? 'pct-amber' : 'pct-red';
+      return `
+      <tr>
+        <td style="white-space:nowrap;font-weight:600;font-size:12px">
+          ${parseDate(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric',weekday:'short'})}
+        </td>
+        ${VENDORS.map(v => `
+        <td>
+          <input type="number" value="${r[v]||''}" placeholder="—" min="0" step="0.01"
+            style="border-bottom:2px solid ${VCOLORS[v]}33;min-width:65px"
+            onchange="upd('${acct}','${r.id}','${v}',this.value)" />
+        </td>`).join('')}
+        <td class="num" style="font-weight:700;color:#dc2626">${fmt(r.sp)}</td>
+        <td class="num" style="font-weight:600;color:#16a34a">${fmt(r.sales)}</td>
+        <td class="num"><span class="${pcCls}" style="font-weight:700">${r.dayPct.toFixed(1)}%</span></td>
+        <td style="min-width:150px">
+          <textarea class="vendor-note-input" rows="1"
+            placeholder="Add note…"
+            onchange="upd('${acct}','${r.id}','note',this.value)">${r.note||''}</textarea>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+    <tfoot>
+      <tr class="tfoot-row">
+        <td>TOTALS</td>
+        ${VENDORS.map(v=>`<td class="num" style="color:${VCOLORS[v]}">${fmt(vTots[v])}</td>`).join('')}
+        <td class="num c-red">${fmt(tSpend)}</td>
+        <td class="num c-green">${fmt(tSales)}</td>
+        <td class="num ${tPct<30?'pct-green':tPct<50?'pct-amber':'pct-red'}">${tPct.toFixed(1)}%</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>`;
+}
+
+/* ── Ancillary Invoices Tab ── */
+function buildAncillaryTab(acct) {
+  const items = ancillaryMonthEntries(acct);
+  const total = items.reduce((s,a)=>s+(parseFloat(a.amount)||0),0);
+
+  const rows = items.length ? items.map(a => `
+    <tr>
+      <td style="white-space:nowrap;width:110px">
+        <input type="date" value="${toInputDate(a.date)}"
+          onchange="updAnc('${acct}','${a.id}','date',fromInputDate(this.value))" />
+      </td>
+      <td>
+        <input type="text" value="${escHtml(a.description||'')}" placeholder="Description / vendor name…"
+          style="border:1px solid transparent;border-radius:5px;padding:4px 6px;font-size:13px;width:100%;background:transparent;font-family:inherit;color:var(--text)"
+          onfocus="this.style.borderColor='#94a3b8';this.style.background='#fff'"
+          onblur="this.style.borderColor='transparent';this.style.background='transparent'"
+          onchange="updAnc('${acct}','${a.id}','description',this.value)" />
+      </td>
+      <td style="width:130px">
+        <input type="number" value="${a.amount||''}" placeholder="0.00" min="0" step="0.01"
+          style="border-bottom:2px solid #f59e0b55;text-align:right;width:100%"
+          onchange="updAnc('${acct}','${a.id}','amount',this.value)" />
+      </td>
+      <td>
+        <textarea class="anc-note-input" rows="1"
+          placeholder="Notes (optional)…"
+          onchange="updAnc('${acct}','${a.id}','note',this.value)">${escHtml(a.note||'')}</textarea>
+      </td>
+      <td style="width:36px">
+        <button class="btn-del" onclick="delAnc('${acct}','${a.id}')" title="Delete">×</button>
+      </td>
+    </tr>`).join('')
+  : `<tr><td colspan="5" class="empty-state" style="padding:32px;text-align:center;color:var(--muted)">
+      No ancillary invoices yet. Click <strong>+ Add Invoice</strong> to start.
+    </td></tr>`;
+
+  return `
+  <div class="anc-tbl-card">
+    <div class="anc-tbl-head">
+      <h3>🧾 Ancillary Invoices & Spend — ${getMonthName(vMonth,vYear)}</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:12px;color:var(--muted)">Total: <strong style="color:#f59e0b">${fmt(total)}</strong></span>
+        <button class="btn-add" style="background:#f59e0b" onclick="addAnc('${acct}')">+ Add Invoice</button>
+      </div>
+    </div>
+    <div class="tbl-scroll">
+      <table style="min-width:680px">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Description</th>
+            <th class="num" style="color:#f59e0b">Amount</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        ${items.length ? `<tfoot>
+          <tr class="tfoot-row">
+            <td colspan="2">TOTAL ANCILLARY</td>
+            <td class="num" style="color:#f59e0b">${fmt(total)}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
+    </div>
+  </div>`;
+}
+
+function toInputDate(dateStr) {
+  if (!dateStr) return '';
+  const d = parseDate(dateStr);
+  if (!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function fromInputDate(iso) {
+  if (!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return `${parseInt(m)}/${parseInt(d)}/${y}`;
+}
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+
+function buildCogsChart(acct, cogsRows) {
+  const canvas = document.getElementById('cogsCanvas');
+  if (!canvas) return;
+  if (chartCogs) { chartCogs.destroy(); chartCogs = null; }
+  if (!cogsRows.length) return;
+
+  const labels = cogsRows.map(r => parseDate(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+
+  chartCogs = new Chart(canvas, {
+    type:'bar',
+    data:{
+      labels,
+      datasets: VENDORS.map(v => ({
+        label:           VLABELS[v],
+        data:            cogsRows.map(r => r.vAmts[v]),
+        backgroundColor: VCOLORS[v] + 'cc',
+        borderColor:     VCOLORS[v],
+        borderWidth:     1,
+        borderRadius:    2,
+        borderSkipped:   false,
+      }))
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{position:'bottom',labels:{font:{size:10},boxWidth:10,padding:8}},
+        tooltip:{callbacks:{
+          label: c => ` ${c.dataset.label}: ${fmt(c.raw)}`,
+          footer: items => ` Total: ${fmt(items.reduce((s,i)=>s+i.raw,0))}`
+        }}
+      },
+      scales:{
+        x:{ stacked:true, grid:{display:false}, ticks:{maxRotation:40,font:{size:9}} },
+        y:{ stacked:true, ticks:{callback:v=>'$'+(v/1000).toFixed(0)+'k',font:{size:10}}, grid:{color:'#f1f5f9'} }
+      }
+    }
+  });
+}
+
+/* ── Vendor Share Donut ── */
+function buildVendorDonut(acct, t) {
+  const canvas = document.getElementById('cogsCumCanvas');
+  if (!canvas) return;
+  if (chartCogsP) { chartCogsP.destroy(); chartCogsP = null; }
+
+  const vals = VENDORS.map(v => t.vendors[v]);
+  const cols  = VENDORS.map(v => VCOLORS[v]);
+
+  chartCogsP = new Chart(canvas, {
+    type:'doughnut',
+    data:{
+      labels: VENDORS.map(v => VLABELS[v]),
+      datasets:[{
+        data: vals,
+        backgroundColor: cols,
+        borderColor: '#fff',
+        borderWidth: 2,
+        hoverOffset: 6,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      cutout:'60%',
+      plugins:{
+        legend:{position:'right',labels:{font:{size:10},boxWidth:12,padding:8}},
+        tooltip:{callbacks:{
+          label: c => ` ${c.label}: ${fmt(c.raw)} (${t.spend>0?(c.raw/t.spend*100).toFixed(1):0}%)`
+        }}
+      }
+    }
+  });
+}
+
+/* ── Table ── */
+function buildTable(acct, rows) {
+  if (!rows.length) return `<div class="empty-state"><div class="ei">📋</div><div>No entries yet.</div></div>`;
+
+  const tSales = rows.reduce((s,r)=>s+(parseFloat(r.dailySales)||0),0);
+  const tSpend = rows.reduce((s,r)=>s+rowSpend(r),0);
+  const tNet   = tSales-tSpend;
+
+  const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  return `<table>
+    <thead>
+      <tr>
+        <th>Day</th>
+        <th>Date</th>
+        <th class="num">Daily Sales</th>
+        <th class="num">Spend</th>
+        <th class="num">Net</th>
+        <th class="num">Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+    ${rows.map(r => {
+      const dt    = parseDate(r.date);
+      const dow   = dt.getDay(); // 0=Sun,6=Sat
+      const isWkd = dow === 0 || dow === 6;
+      const sales = parseFloat(r.dailySales)||0;
+      const sp    = rowSpend(r);
+      const net   = sales - sp;
+      const bc    = balClass(r.runBal, state[acct].startingBalance);
+      const rowBg = isWkd ? 'background:#f8fafc;' : '';
+      const dateLabel = dt.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});
+      return `
+      <tr style="${rowBg}">
+        <td style="font-size:11px;font-weight:700;color:${isWkd?'#94a3b8':'var(--muted)'};width:36px;text-align:center">
+          ${DAY_NAMES[dow]}
+        </td>
+        <td style="white-space:nowrap;font-weight:${isWkd?'400':'600'};color:${isWkd?'#94a3b8':'var(--text)'};font-size:13px;width:60px">
+          ${dateLabel}
+        </td>
+        <td style="width:140px">
+          <input type="number" value="${parseFloat(r.dailySales)||0}" placeholder="0"
+            min="0" step="0.01"
+            style="border-bottom:2px solid var(--fooda)${isWkd?'22':'44'};color:${isWkd?'#94a3b8':'var(--text)'}"
+            onchange="upd('${acct}','${r.id}','dailySales',this.value)" />
+        </td>
+        <td class="num" style="font-weight:600;color:#dc2626;font-size:12px" title="Enter vendor detail in Spend / COGs tab">
+          ${sp>0?fmt(sp)+'<span style="font-size:10px;color:#94a3b8;margin-left:4px">▸ COGs</span>':'<span style="color:#cbd5e1">—</span>'}
+        </td>
+        <td class="num" style="font-weight:600;color:${net>0?'#16a34a':net<0?'#dc2626':'#94a3b8'}">
+          ${sales>0||sp>0?(net>=0?'+':'-')+fmt(Math.abs(net)):'—'}
+        </td>
+        <td class="num" style="font-weight:700">
+          <span class="${sales>0||sp>0?bc:''}${isWkd&&!sales&&!sp?'c-muted':''}">
+            ${fmt(r.runBal)}
+          </span>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+    <tfoot>
+      <tr class="tfoot-row">
+        <td colspan="2">TOTALS</td>
+        <td class="num c-green">${fmt(tSales)}</td>
+        <td class="num c-red">${fmt(tSpend)}</td>
+        <td class="num" style="color:${tNet>=0?'#16a34a':'#dc2626'}">${tNet>=0?'+':'-'}${fmt(Math.abs(tNet))}</td>
+        <td class="num"></td>
+      </tr>
+    </tfoot>
+  </table>`;
+}
+
+/* ── Balance Trend Chart ── */
+function buildBalChart(acct, rows) {
+  const col    = COLORS[acct];
+  const canvas = document.getElementById('balCanvas');
+  if (!canvas) return;
+  if (chartBal) { chartBal.destroy(); chartBal = null; }
+
+  const labels = ['Start'];
+  const data   = [state[acct].startingBalance];
+  rows.forEach(r => {
+    labels.push(parseDate(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    data.push(r.runBal);
+  });
+
+  chartBal = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Balance',
+        data,
+        borderColor: col,
+        backgroundColor: col + '15',
+        fill: true, tension: 0.35,
+        pointRadius: 4, pointHoverRadius: 6,
+        pointBackgroundColor: col, pointBorderColor: '#fff', pointBorderWidth: 2,
+        borderWidth: 2.5,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => '  Balance: '+fmt(c.raw) } }
+      },
+      scales: {
+        y: { ticks: { callback: v=>'$'+(v/1000).toFixed(0)+'k', font:{size:10} }, grid:{color:'#f1f5f9'} },
+        x: { grid:{display:false}, ticks:{maxRotation:40,font:{size:10}} }
+      }
+    }
+  });
+}
+
+/* ── Meal Period Bar Chart ── */
+function buildMealChart(acct, rows) {
+  const canvas = document.getElementById('mealCanvas');
+  if (!canvas) return;
+  if (chartMeal) { chartMeal.destroy(); chartMeal = null; }
+  if (!rows.length) return;
+
+  const labels = rows.map(r => parseDate(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+  const bfData = rows.map(r => parseFloat(r.bfSales)||0);
+  const lnData = rows.map(r => parseFloat(r.lnSales)||0);
+  const dnData = rows.map(r => parseFloat(r.dnSales)||0);
+  const rtData = rows.map(r => parseFloat(r.retailSales)||0);
+  const brData = rows.map(r => parseFloat(r.baristaSales)||0);
+
+  chartMeal = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Breakfast',        data:bfData, backgroundColor:'#f59e0b', borderRadius:3, borderSkipped:false },
+        { label:'Lunch',            data:lnData, backgroundColor:'#0ea5e9', borderRadius:3, borderSkipped:false },
+        { label:'Dinner',           data:dnData, backgroundColor:'#8b5cf6', borderRadius:3, borderSkipped:false },
+        { label:'11 Dining/Retail', data:rtData, backgroundColor:'#14b8a6', borderRadius:3, borderSkipped:false },
+        { label:'11 Dining/Barista',data:brData, backgroundColor:'#b45309', borderRadius:3, borderSkipped:false },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'bottom', labels:{font:{size:10},boxWidth:10,padding:10} },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.raw)}` } }
+      },
+      scales: {
+        x: { stacked:true, grid:{display:false}, ticks:{maxRotation:40,font:{size:9}} },
+        y: { stacked:true, ticks:{callback:v=>'$'+(v/1000).toFixed(0)+'k',font:{size:10}}, grid:{color:'#f1f5f9'} }
+      }
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════
+   ACTIONS
+══════════════════════════════════════════════ */
+function setActive(acct) { active = acct; detailTab = 'entries'; render(); saveState(); window.scrollTo({top:300,behavior:'smooth'}); }
+function switchTab(tab) { detailTab = tab; render(); saveState(); }
+
+function shiftMonth(d) {
+  vMonth += d;
+  if (vMonth < 0)  { vMonth = 11; vYear--; }
+  if (vMonth > 11) { vMonth = 0;  vYear++; }
+  ensureMonthDays(vMonth, vYear);
+  render(); saveState();
+}
+function goToday() { vMonth = new Date().getMonth(); vYear = new Date().getFullYear(); ensureMonthDays(vMonth, vYear); render(); saveState(); }
+
+function addEntry(acct) {
+  const e = { id: mkId(), date: new Date().toISOString().split('T')[0], dailySales: '' };
+  VENDORS.forEach(v => { e[v] = ''; });
+  state[acct].entries.push(e);
+  render(); saveState();
+}
+
+function upd(acct, id, field, val) {
+  const e = state[acct].entries.find(e => e.id === id);
+  if (e) e[field] = val;
+  render(); saveState();
+}
+
+function delEntry(acct, id) {
+  state[acct].entries = state[acct].entries.filter(e => e.id !== id);
+  render(); saveState();
+}
+
+function updateStartBal(acct, val) {
+  state[acct].startingBalance = parseFloat(val) || 0;
+  render(); saveState();
+}
+
+/* ── Ancillary actions ── */
+function addAnc(acct) {
+  if (!state[acct].ancillary) state[acct].ancillary = [];
+  const today = `${vMonth+1}/${new Date().getDate()}/${vYear}`;
+  state[acct].ancillary.push({ id: mkId(), date: today, description: '', amount: '', note: '' });
+  render(); saveState();
+}
+
+function updAnc(acct, id, field, val) {
+  const a = (state[acct].ancillary||[]).find(a => a.id === id);
+  if (a) a[field] = val;
+  render(); saveState();
+}
+
+function delAnc(acct, id) {
+  state[acct].ancillary = (state[acct].ancillary||[]).filter(a => a.id !== id);
+  render(); saveState();
+}
+
+/* ── Retail actions ── */
+function addRetail(acct) {
+  if (!state[acct].retail) state[acct].retail = [];
+  const today = `${vMonth+1}/${new Date().getDate()}/${vYear}`;
+  state[acct].retail.push({ id: mkId(), date: today, item: '', category: '', amount: '', cost: '', note: '' });
+  render(); saveState();
+}
+
+function updRetail(acct, id, field, val) {
+  const r = (state[acct].retail||[]).find(r => r.id === id);
+  if (r) r[field] = val;
+  render(); saveState();
+}
+
+function delRetail(acct, id) {
+  state[acct].retail = (state[acct].retail||[]).filter(r => r.id !== id);
+  render(); saveState();
+}
+
+function downloadFile() {
+  // Get the full HTML source
+  let html = document.documentElement.outerHTML;
+
+  // Serialize current live state
+  const stateJson = JSON.stringify(state, null, 2);
+
+  // Replace the state block in the source with current data
+  // We match from "/* Real data:" or the const state = { line through the closing }; 
+  html = html.replace(/const state = \{[\s\S]*?\n\};/, 'const state = ' + stateJson + ';');
+
+  // Also bake in current vMonth/vYear/active so it opens on the right view
+  html = html.replace(/let vMonth = [^;]+;/, 'let vMonth = ' + vMonth + ';');
+  html = html.replace(/let vYear\s*=\s*[^;]+;/, 'let vYear = ' + vYear + ';');
+  html = html.replace(/let active\s*=\s*'[^']+';/, "let active = '" + active + "';");
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const date = new Date().toISOString().slice(0,10);
+  a.href     = url;
+  a.download = 'fooda-dashboard-' + date + '.html';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ── INIT ── */
+startListening(); // Firebase loads state and calls render() when ready
+</script>
+</body>
+</html>
